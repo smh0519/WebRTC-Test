@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  livekit:
+    image: livekit/livekit-server
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    environment:
+      - LIVEKIT_KEYS=devkey: secret
+    command: --dev --bind 0.0.0.0
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - LIVEKIT_HOST=ws://livekit:7880
+      - LIVEKIT_API_KEY=devkey
+      - LIVEKIT_API_SECRET=secret
+      - PORT=8080
+    depends_on:
+      - livekit
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+      - NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:7880
+    depends_on:
+      - backend
