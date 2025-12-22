@@ -4,11 +4,11 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { Suspense, useState, useEffect } from 'react';
 import {
     LiveKitRoom,
-    VideoConference,
     RoomAudioRenderer,
 } from '@livekit/components-react';
 import '@livekit/components-styles';
 import { getToken } from '@/lib/api';
+import CustomVideoConference from '@/components/CustomVideoConference';
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || 'ws://localhost:7880';
 
@@ -94,10 +94,21 @@ function RoomContent() {
                 options={{
                     adaptiveStream: true,
                     dynacast: true,
+                    // 연결 안정성 향상
+                    disconnectOnPageLeave: true,
+                    // 비디오 기본 설정
+                    videoCaptureDefaults: {
+                        resolution: { width: 1280, height: 720, frameRate: 30 },
+                    },
+                    // 퍼블리시 기본 설정
+                    publishDefaults: {
+                        simulcast: true,
+                        videoCodec: 'vp8',
+                    },
                 }}
                 style={{ height: '100%' }}
             >
-                <VideoConference />
+                <CustomVideoConference />
                 <RoomAudioRenderer />
             </LiveKitRoom>
         </div>

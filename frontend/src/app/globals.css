@@ -24,3 +24,39 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* LiveKit 컴포넌트 깜빡임 방지 */
+.lk-participant-tile {
+  transition: all 0.3s ease-in-out !important;
+}
+
+.lk-grid-layout {
+  transition: all 0.3s ease-in-out !important;
+}
+
+/* 참가자 진입 시 부드러운 페이드인 */
+.lk-participant-tile {
+  animation: fadeIn 0.3s ease-in-out !important;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 비디오 로딩 중 깜빡임 방지 */
+.lk-participant-tile video {
+  transition: opacity 0.2s ease-in-out !important;
+}
+
+/* 그리드 재배치 시 부드러운 전환 */
+.lk-focus-layout,
+.lk-grid-layout {
+  transition: grid-template-columns 0.3s ease, gap 0.3s ease !important;
+}
