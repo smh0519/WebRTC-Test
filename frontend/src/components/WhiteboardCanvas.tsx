@@ -5,10 +5,8 @@ import * as PIXI from 'pixi.js';
 import { useRoomContext } from '@livekit/components-react';
 import { RoomEvent, DataPacket_Kind } from 'livekit-client';
 
-type Tool = 'pen' | 'eraser';
-
 interface DrawEvent {
-  ids: number[]; // Used to group points into a stroke if needed
+  type: 'draw';
   x: number;
   y: number;
   prevX: number;
@@ -17,37 +15,116 @@ interface DrawEvent {
   width: number;
 }
 
+interface ClearEvent {
+  type: 'clear';
+}
+
+type WhiteboardEvent = DrawEvent | ClearEvent;
+
 export default function WhiteboardCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const drawingContainerRef = useRef<PIXI.Container | null>(null);
-  // We'll use a map to keep track of ongoing remote strokes if we want to smooth them 
-  // but for now simple line segments are stateless and easiest.
+  const toolRef = useRef<'pen' | 'eraser'>('pen');
+  const [activeTool, setActiveTool] = useState<'pen' | 'eraser'>('pen');
 
   const room = useRoomContext();
 
-  // Use refs for values needed inside event listeners
-  const toolRef = useRef<Tool>('pen');
-  const [activeTool, setActiveTool] = useState<Tool>('pen');
+  // Helper: Draw Line
+  const drawLine = (x: number, y: number, prevX: number, prevY: number, color: number, width: number) => {
+    if (!drawingContainerRef.current) return;
 
+    const graphics = new PIXI.Graphics();
+
+    // Create the stroke style
+    graphics.moveTo(prevX, prevY);
+    graphics.lineTo(x, y);
+    graphics.stroke({ width, color, cap: 'round', join: 'round' });
+
+    drawingContainerRef.current.addChild(graphics);
+  };
+
+  // --- Pixi Initialization & Event Management ---
   useEffect(() => {
     if (!containerRef.current) return;
-    if (appRef.current) return;
+    if (appRef.current) return; // Prevent double init
 
-    let isDestroyed = false; // 추가: destroy 상태 추적
-    let onPointerDown: ((e: PointerEvent) => void) | null = null;
-    let onPointerMove: ((e: PointerEvent) => void) | null = null;
-    let onPointerUp: (() => void) | null = null;
-    let resizeObserver: ResizeObserver | null = null;
+    let currentStroke: DrawEvent[] = [];
+    let isDrawing = false;
+    let lastPoint: { x: number, y: number } | null = null;
+    let canvasElement: HTMLCanvasElement | null = null;
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (!canvasElement) return;
+      isDrawing = true;
+      canvasElement.setPointerCapture(e.pointerId);
+
+      const rect = canvasElement.getBoundingClientRect();
+      lastPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      currentStroke = [];
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!isDrawing || !lastPoint || !canvasElement) return;
+
+      const rect = canvasElement.getBoundingClientRect();
+      const currentPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+      const color = toolRef.current === 'eraser' ? 0xffffff : 0x000000;
+      const width = toolRef.current === 'eraser' ? 20 : 2;
+
+      // Draw Locally
+      drawLine(currentPoint.x, currentPoint.y, lastPoint.x, lastPoint.y, color, width);
+
+      // Broadcast
+      const event: DrawEvent = {
+        type: 'draw',
+        x: currentPoint.x, y: currentPoint.y,
+        prevX: lastPoint.x, prevY: lastPoint.y,
+        color, width
+      };
+
+      if (room) {
+        const str = JSON.stringify(event);
+        const encoder = new TextEncoder();
+        room.localParticipant.publishData(encoder.encode(str), { reliable: true });
+      }
+
+      currentStroke.push(event);
+      lastPoint = currentPoint;
+    };
+
+    const onPointerUp = async (e: PointerEvent) => {
+      isDrawing = false;
+      lastPoint = null;
+      if (canvasElement) {
+        canvasElement.releasePointerCapture(e.pointerId);
+      }
+
+      if (currentStroke.length > 0) {
+        try {
+          await fetch('/api/whiteboard', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ room: room?.name, stroke: currentStroke })
+          });
+        } catch (err) {
+          console.error('Failed to save stroke:', err);
+        }
+      }
+      currentStroke = [];
+    };
 
     const initPixi = async () => {
-      if (!containerRef.current || isDestroyed) return;
-
       // 1. Init Pixi with ResizeObserver
-      resizeObserver = new ResizeObserver((entries) => {
-        if (!appRef.current || !entries[0] || isDestroyed) return;
+      const resizeObserver = new ResizeObserver((entries) => {
+        if (!appRef.current || !entries[0]) return;
         const { width, height } = entries[0].contentRect;
         appRef.current.renderer.resize(width, height);
+        // CRITICAL: Update hitArea when size changes
+        if (appRef.current.stage) {
+          appRef.current.stage.hitArea = appRef.current.screen;
+        }
       });
       resizeObserver.observe(containerRef.current!);
 
@@ -61,199 +138,133 @@ export default function WhiteboardCanvas() {
         resolution: window.devicePixelRatio || 1,
       });
 
-      if (isDestroyed) {
-        app.destroy(true);
-        return;
-      }
-
-      if (containerRef.current) {
+      if (containerRef.current && !appRef.current) {
         containerRef.current.appendChild(app.canvas);
         appRef.current = app;
+        canvasElement = app.canvas;
 
         const drawingContainer = new PIXI.Container();
         app.stage.addChild(drawingContainer);
         drawingContainerRef.current = drawingContainer;
 
-        // Shared drawing function (for local and remote)
-        const drawLine = (x: number, y: number, prevX: number, prevY: number, color: number, width: number) => {
-          // 추가: destroy된 상태면 그리기 중단
-          if (isDestroyed || !drawingContainerRef.current) return;
-
-          const graphics = new PIXI.Graphics();
-          drawingContainer.addChild(graphics);
-
-          graphics.moveTo(prevX, prevY);
-          graphics.lineTo(x, y);
-          graphics.stroke({ width, color, cap: 'round', join: 'round' });
-        };
-
-        // 2. Setup Local Drawing Logic
-        let isDrawing = false;
-        let lastPoint: { x: number; y: number } | null = null;
-
-        onPointerDown = (e: PointerEvent) => {
-          if (isDestroyed) return;
-          isDrawing = true;
-          const rect = app.canvas.getBoundingClientRect();
-          lastPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-
-          const color = toolRef.current === 'eraser' ? 0xffffff : 0x000000;
-          const width = toolRef.current === 'eraser' ? 20 : 2;
-
-          if (!isDestroyed && drawingContainerRef.current) {
-            const graphics = new PIXI.Graphics();
-            drawingContainer.addChild(graphics);
-            graphics.circle(lastPoint.x, lastPoint.y, width / 2);
-            graphics.fill({ color });
-          }
-
-          broadcastDraw({
-            x: lastPoint.x, y: lastPoint.y,
-            prevX: lastPoint.x, prevY: lastPoint.y,
-            color, width
-          });
-        };
-
-        onPointerMove = (e: PointerEvent) => {
-          if (!isDrawing || !lastPoint || isDestroyed) return;
-
-          const rect = app.canvas.getBoundingClientRect();
-          const currentPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-
-          const color = toolRef.current === 'eraser' ? 0xffffff : 0x000000;
-          const width = toolRef.current === 'eraser' ? 20 : 2;
-
-          drawLine(currentPoint.x, currentPoint.y, lastPoint.x, lastPoint.y, color, width);
-
-          broadcastDraw({
-            x: currentPoint.x, y: currentPoint.y,
-            prevX: lastPoint.x, prevY: lastPoint.y,
-            color, width
-          });
-
-          lastPoint = currentPoint;
-        };
-
-        onPointerUp = () => {
-          isDrawing = false;
-          lastPoint = null;
-        };
-
-        app.canvas.addEventListener('pointerdown', onPointerDown);
-        window.addEventListener('pointermove', onPointerMove);
-        window.addEventListener('pointerup', onPointerUp);
-
-        // 3. Setup Remote Data Listener
-        if (room) {
-          room.on(RoomEvent.DataReceived, (payload: Uint8Array, participant: any) => {
-            if (isDestroyed) return;
-            try {
-              const str = new TextDecoder().decode(payload);
-              const event = JSON.parse(str);
-
-              if (event.type === 'draw') {
-                drawLine(event.x, event.y, event.prevX, event.prevY, event.color, event.width);
-              } else if (event.type === 'clear') {
-                if (drawingContainerRef.current) {
-                  drawingContainer.removeChildren();
-                }
-              }
-            } catch (e) {
-              console.error('Failed to parse board data', e);
-            }
-          });
-        }
+        // Attach Native Listeners
+        canvasElement.addEventListener('pointerdown', onPointerDown);
+        canvasElement.addEventListener('pointermove', onPointerMove);
+        canvasElement.addEventListener('pointerup', onPointerUp);
       }
     };
 
     initPixi();
 
     return () => {
-      isDestroyed = true; // 먼저 플래그 설정
-
-      // 이벤트 리스너 제거
-      if (onPointerMove) window.removeEventListener('pointermove', onPointerMove);
-      if (onPointerUp) window.removeEventListener('pointerup', onPointerUp);
-      if (appRef.current && onPointerDown) {
-        appRef.current.canvas.removeEventListener('pointerdown', onPointerDown);
-      }
-
-      // ResizeObserver 정리
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-      }
-
-      // PIXI 앱 정리
+      // Cleanup
       if (appRef.current) {
+        const canvas = appRef.current.canvas;
+        // Remove Listeners safely
+        if (canvas) {
+          canvas.removeEventListener('pointerdown', onPointerDown);
+          canvas.removeEventListener('pointermove', onPointerMove);
+          canvas.removeEventListener('pointerup', onPointerUp);
+        }
         appRef.current.destroy(true, { children: true, texture: true });
         appRef.current = null;
       }
-      drawingContainerRef.current = null;
     };
   }, [room]);
 
-  // Helper to send data
-  const broadcastDraw = (data: Omit<DrawEvent, 'ids'>) => {
+  // Data Receiver
+  useEffect(() => {
     if (!room) return;
-    const str = JSON.stringify({ type: 'draw', ...data });
-    const payload = new TextEncoder().encode(str);
-    room.localParticipant.publishData(payload, { reliable: true }); // reliable for drawing is safer, though lossy is faster
+
+    const handleData = (payload: Uint8Array, participant: any) => {
+      try {
+        const str = new TextDecoder().decode(payload);
+        const event = JSON.parse(str);
+
+        if (event.type === 'draw') {
+          drawLine(event.x, event.y, event.prevX, event.prevY, event.color, event.width);
+        } else if (event.type === 'clear') {
+          drawingContainerRef.current?.removeChildren();
+        }
+      } catch (e) {
+        console.error('Failed to parse board data', e);
+      }
+    };
+
+    room.on(RoomEvent.DataReceived, handleData);
+    return () => {
+      room.off(RoomEvent.DataReceived, handleData);
+    };
+  }, [room]);
+
+  // Initial Load (History)
+  useEffect(() => {
+    if (!room?.name) return;
+
+    const loadHistory = async () => {
+      try {
+        const res = await fetch(`/api/whiteboard?room=${room.name}`);
+        if (!res.ok) return;
+        const history = await res.json();
+
+        // Render all history
+        history.forEach((stroke: DrawEvent[]) => {
+          stroke.forEach(point => {
+            drawLine(point.x, point.y, point.prevX, point.prevY, point.color, point.width);
+          });
+        });
+      } catch (e) {
+        console.error('Failed to load history', e);
+      }
+    };
+
+    // Delay slightly or call immediately (Animation masking happens in parent)
+    loadHistory();
+  }, [room?.name]);
+
+  const setTool = (t: 'pen' | 'eraser') => {
+    toolRef.current = t;
+    setActiveTool(t);
   };
 
-  const broadcastClear = () => {
-    if (!room) return;
-    const str = JSON.stringify({ type: 'clear' });
-    const payload = new TextEncoder().encode(str);
-    room.localParticipant.publishData(payload, { reliable: true });
-  };
-
-  const setTool = (tool: Tool) => {
-    setActiveTool(tool);
-    toolRef.current = tool;
-  };
-
-  const clearCanvas = () => {
+  const clearBoard = () => {
     if (drawingContainerRef.current) {
       drawingContainerRef.current.removeChildren();
-      broadcastClear();
+    }
+    // Broadcast Clear
+    if (room) {
+      const event: ClearEvent = { type: 'clear' };
+      const encoder = new TextEncoder();
+      room.localParticipant.publishData(encoder.encode(JSON.stringify(event)), { reliable: true });
+
+      // API Clear (Optional: Implement DELETE /api/whiteboard if needed)
     }
   };
 
   return (
-    <div className="relative w-full h-full bg-white">
-      <div ref={containerRef} className="w-full h-full touch-none" />
+    <div className="relative w-full h-full bg-white touch-none">
+      <div ref={containerRef} className="w-full h-full" />
 
       {/* Floating Toolbar */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-2 bg-gray-800/90 backdrop-blur p-2 rounded-xl shadow-xl border border-gray-700">
+      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white/90 backdrop-blur shadow-lg rounded-full px-6 py-3 flex gap-4 border border-gray-200">
         <button
           onClick={() => setTool('pen')}
-          className={`p-2 rounded-lg transition-colors ${activeTool === 'pen' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-          title="Pen"
+          className={`p-2 rounded-full transition-colors ${activeTool === 'pen' ? 'bg-black text-white' : 'hover:bg-gray-100'}`}
         >
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-          </svg>
+          🖊️ 펜
         </button>
         <button
           onClick={() => setTool('eraser')}
-          className={`p-2 rounded-lg transition-colors ${activeTool === 'eraser' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-          title="Eraser"
+          className={`p-2 rounded-full transition-colors ${activeTool === 'eraser' ? 'bg-red-100 text-red-600' : 'hover:bg-gray-100'}`}
         >
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
+          🧹 지우개
         </button>
-        <div className="w-px bg-gray-600/50 mx-1 my-1" />
+        <div className="w-px bg-gray-300 mx-2" />
         <button
-          onClick={clearCanvas}
-          className="p-2 rounded-lg text-red-400 hover:bg-red-500/20 transition-colors"
-          title="Clear All"
+          onClick={clearBoard}
+          className="p-2 hover:bg-red-50 text-red-500 rounded-full transition-colors font-medium"
         >
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
+          모두 지우기
         </button>
       </div>
     </div>

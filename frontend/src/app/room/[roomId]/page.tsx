@@ -41,6 +41,13 @@ function RoomContent() {
         }
     }, [roomId, participantName]);
 
+    // Force Layout Recalculation on Toggle
+    useEffect(() => {
+        setTimeout(() => {
+            window.dispatchEvent(new Event('resize'));
+        }, 100);
+    }, [isWhiteboardOpen]);
+
     const handleLeave = () => {
         router.push('/');
     };
@@ -95,7 +102,7 @@ function RoomContent() {
                 setError(err.message);
             }}
             options={{
-                adaptiveStream: true,
+                adaptiveStream: false, // Critical: Prevents video from pausing when covered by whiteboard
                 dynacast: true,
                 disconnectOnPageLeave: true,
                 // 카메라 설정
@@ -106,53 +113,49 @@ function RoomContent() {
                 publishDefaults: {
                     simulcast: true,
                     videoCodec: 'vp8',
-                    // 화면 공유 최적화
-                    screenShareEncoding: {
-                        maxBitrate: 3_000_000,
-                        maxFramerate: 15,
-                    },
                 },
             }}
             className="h-screen w-screen bg-gray-900 overflow-hidden relative"
             style={{ height: '100vh' }}
         >
-            {/* Main Content Area */}
-            <div className="absolute inset-0 w-full h-full z-0 flex flex-col">
-                <CustomVideoConference />
-                <RoomAudioRenderer />
-            </div>
+            {/* Audio Renderer - Always Active */}
+            <RoomAudioRenderer />
 
-            {/* Whiteboard Mode - Split Layout */}
-            {isWhiteboardOpen && (
-                <div className="absolute inset-0 z-50 flex overflow-hidden animate-in fade-in duration-200">
-                    {/* 화이트보드 영역 (왼쪽 - 넓게) */}
-                    <div className="flex-1 flex flex-col bg-gray-800">
-                        {/* 헤더 */}
-                        <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 bg-gray-900/50 border-b border-gray-700/50">
+            {/* Content Switcher: Video OR Whiteboard (Mutex) to prevent Black Screen bugs */}
+            {isWhiteboardOpen ? (
+                // --- Whiteboard Mode ---
+                <div className="absolute inset-0 z-50 flex overflow-hidden bg-gray-900/95 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
+                    <div className="flex-1 flex flex-col relative h-full rounded-2xl overflow-hidden m-4 bg-white shadow-2xl ring-1 ring-white/10">
+                        {/* Header */}
+                        <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 bg-gray-100 border-b border-gray-200">
                             <div className="flex items-center gap-2">
-                                <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                </svg>
-                                <span className="text-white font-semibold">화이트보드</span>
+                                <span className="text-gray-900 font-bold text-lg">📝 화이트보드</span>
+                                <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">실시간 저장됨</span>
                             </div>
                             <button
                                 onClick={() => setIsWhiteboardOpen(false)}
-                                className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                                className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
                             >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
                                 닫기
                             </button>
                         </div>
-                        {/* 캔버스 */}
+                        {/* Canvas */}
                         <div className="flex-1 relative">
                             <WhiteboardCanvas />
                         </div>
                     </div>
 
-                    {/* 참가자 사이드바 (오른쪽 - 좁게) */}
-                    <ParticipantSidebar maxVisible={4} />
+                    {/* Sidebar */}
+                    <div className="w-80 h-full p-4 pl-0">
+                        <div className="h-full bg-gray-800 rounded-2xl overflow-hidden border border-gray-700">
+                            <ParticipantSidebar />
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                // --- Video Mode ---
+                <div className="absolute inset-0 w-full h-full flex flex-col z-0 animate-in fade-in duration-300">
+                    <CustomVideoConference />
                 </div>
             )}
 
