@@ -1,5 +1,5 @@
 port: 7880
-bind_address: ""
+bind_address: "0.0.0.0"
 rtc:
     udp_port: 7882
     tcp_port: 7881
