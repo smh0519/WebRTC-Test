@@ -45,8 +45,7 @@ export default function CustomVideoConference() {
         });
     }, [tracks]);
 
-    // Debug logging
-    console.log('CVC State:', { connectionState, tracksLength: tracks.length, activeTracksLength: activeTracks.length });
+
 
     // 연결 중일 때
     if (connectionState === 'connecting') {
@@ -63,7 +62,7 @@ export default function CustomVideoConference() {
     // 활성 참가자가 없을 때
     if (activeTracks.length === 0) {
         return (
-            <div className="h-full flex flex-col bg-blue-900/20 border-2 border-blue-500">
+            <div className="h-full flex flex-col bg-gray-900">
                 {/* 헤더 */}
                 <div className="flex items-center justify-between px-6 py-4 bg-gray-800/50 backdrop-blur-sm border-b border-gray-700/50">
                     <div className="flex items-center gap-3">
@@ -97,10 +96,9 @@ export default function CustomVideoConference() {
     }
 
     return (
-        <div className="h-full w-full flex flex-col bg-gray-900 border-4 border-red-500 relative z-10" style={{ minHeight: '100%' }}>
-            <div className="absolute top-10 left-0 bg-red-500 text-white p-2 z-50">VIDEO COMPONENT (Red)</div>
-            {/* 헤더 */}
-            <div className="flex items-center justify-between px-6 py-4 bg-gray-800/50 backdrop-blur-sm border-b border-gray-700/50">
+        <div className="h-full w-full flex flex-col bg-gray-900 overflow-hidden">
+            {/* 헤더 - 고정 높이 */}
+            <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 bg-gray-800/50 backdrop-blur-sm border-b border-gray-700/50">
                 <div className="flex items-center gap-3">
                     <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
                     <RoomName className="text-white font-semibold" />
@@ -110,18 +108,18 @@ export default function CustomVideoConference() {
                 </span>
             </div>
 
-            {/* 비디오 그리드 */}
-            <div className="flex-1 p-4">
+            {/* 비디오 그리드 - 남은 공간 채우기, 오버플로우 숨김 */}
+            <div className="flex-1 min-h-0 p-4 overflow-hidden">
                 <GridLayout
                     tracks={activeTracks}
-                    style={{ height: '100%' }}
+                    style={{ height: '100%', width: '100%' }}
                 >
                     <ParticipantTile />
                 </GridLayout>
             </div>
 
-            {/* 컨트롤 바 */}
-            <div className="p-4">
+            {/* 컨트롤 바 - 고정 높이, 항상 하단에 표시 */}
+            <div className="flex-shrink-0 p-4 bg-gray-900/80 backdrop-blur-sm border-t border-gray-700/50">
                 <ControlBar variation="minimal" />
             </div>
         </div>

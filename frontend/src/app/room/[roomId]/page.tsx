@@ -10,6 +10,7 @@ import '@livekit/components-styles';
 import { getToken } from '@/lib/api';
 import CustomVideoConference from '@/components/CustomVideoConference';
 import WhiteboardCanvas from '@/components/WhiteboardCanvas';
+import ParticipantSidebar from '@/components/ParticipantSidebar';
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || 'ws://localhost:7880';
 
@@ -97,40 +98,61 @@ function RoomContent() {
                 adaptiveStream: true,
                 dynacast: true,
                 disconnectOnPageLeave: true,
+                // 카메라 설정
                 videoCaptureDefaults: {
                     resolution: { width: 1280, height: 720, frameRate: 30 },
                 },
+                // 퍼블리시 최적화 설정
                 publishDefaults: {
                     simulcast: true,
                     videoCodec: 'vp8',
+                    // 화면 공유 최적화
+                    screenShareEncoding: {
+                        maxBitrate: 3_000_000,
+                        maxFramerate: 15,
+                    },
                 },
             }}
             className="h-screen w-screen bg-gray-900 overflow-hidden relative"
             style={{ height: '100vh' }}
         >
             {/* Main Content Area */}
-            <div className="absolute inset-0 w-full h-full border-4 border-green-500 z-0 flex flex-col justify-center items-center">
-                <div className="absolute top-0 left-0 bg-green-500 text-black p-2 z-50">PAGE LAYER (Green)</div>
+            <div className="absolute inset-0 w-full h-full z-0 flex flex-col">
                 <CustomVideoConference />
                 <RoomAudioRenderer />
             </div>
 
-            {/* Whiteboard Overlay (Modal Style) */}
+            {/* Whiteboard Mode - Split Layout */}
             {isWhiteboardOpen && (
-                <div className="absolute inset-4 z-50 bg-gray-800 rounded-2xl shadow-2xl ring-1 ring-white/10 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                    <div className="absolute top-4 right-4 z-50">
-                        <button
-                            onClick={() => setIsWhiteboardOpen(false)}
-                            className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg shadow-lg transition-colors"
-                        >
-                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
+                <div className="absolute inset-0 z-50 flex overflow-hidden animate-in fade-in duration-200">
+                    {/* 화이트보드 영역 (왼쪽 - 넓게) */}
+                    <div className="flex-1 flex flex-col bg-gray-800">
+                        {/* 헤더 */}
+                        <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 bg-gray-900/50 border-b border-gray-700/50">
+                            <div className="flex items-center gap-2">
+                                <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                                <span className="text-white font-semibold">화이트보드</span>
+                            </div>
+                            <button
+                                onClick={() => setIsWhiteboardOpen(false)}
+                                className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                닫기
+                            </button>
+                        </div>
+                        {/* 캔버스 */}
+                        <div className="flex-1 relative">
+                            <WhiteboardCanvas />
+                        </div>
                     </div>
-                    <div className="flex-1 relative w-full h-full">
-                        <WhiteboardCanvas />
-                    </div>
+
+                    {/* 참가자 사이드바 (오른쪽 - 좁게) */}
+                    <ParticipantSidebar maxVisible={4} />
                 </div>
             )}
 
