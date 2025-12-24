@@ -34,10 +34,18 @@ export default function WhiteboardCanvas() {
     if (!containerRef.current) return;
     if (appRef.current) return;
 
+    let isDestroyed = false; // 추가: destroy 상태 추적
+    let onPointerDown: ((e: PointerEvent) => void) | null = null;
+    let onPointerMove: ((e: PointerEvent) => void) | null = null;
+    let onPointerUp: (() => void) | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+
     const initPixi = async () => {
+      if (!containerRef.current || isDestroyed) return;
+
       // 1. Init Pixi with ResizeObserver
-      const resizeObserver = new ResizeObserver((entries) => {
-        if (!appRef.current || !entries[0]) return;
+      resizeObserver = new ResizeObserver((entries) => {
+        if (!appRef.current || !entries[0] || isDestroyed) return;
         const { width, height } = entries[0].contentRect;
         appRef.current.renderer.resize(width, height);
       });
@@ -47,11 +55,16 @@ export default function WhiteboardCanvas() {
       await app.init({
         background: '#ffffff',
         resizeTo: containerRef.current!,
-        preference: 'webgl', // WebGPU can be unstable on some setups, using WebGL for reliability
+        preference: 'webgl',
         antialias: true,
         autoDensity: true,
         resolution: window.devicePixelRatio || 1,
       });
+
+      if (isDestroyed) {
+        app.destroy(true);
+        return;
+      }
 
       if (containerRef.current) {
         containerRef.current.appendChild(app.canvas);
@@ -63,6 +76,9 @@ export default function WhiteboardCanvas() {
 
         // Shared drawing function (for local and remote)
         const drawLine = (x: number, y: number, prevX: number, prevY: number, color: number, width: number) => {
+          // 추가: destroy된 상태면 그리기 중단
+          if (isDestroyed || !drawingContainerRef.current) return;
+
           const graphics = new PIXI.Graphics();
           drawingContainer.addChild(graphics);
 
@@ -75,21 +91,22 @@ export default function WhiteboardCanvas() {
         let isDrawing = false;
         let lastPoint: { x: number; y: number } | null = null;
 
-        const onPointerDown = (e: PointerEvent) => {
+        onPointerDown = (e: PointerEvent) => {
+          if (isDestroyed) return;
           isDrawing = true;
           const rect = app.canvas.getBoundingClientRect();
           lastPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
 
-          // Draw initial dot
           const color = toolRef.current === 'eraser' ? 0xffffff : 0x000000;
           const width = toolRef.current === 'eraser' ? 20 : 2;
 
-          const graphics = new PIXI.Graphics();
-          drawingContainer.addChild(graphics);
-          graphics.circle(lastPoint.x, lastPoint.y, width / 2);
-          graphics.fill({ color });
+          if (!isDestroyed && drawingContainerRef.current) {
+            const graphics = new PIXI.Graphics();
+            drawingContainer.addChild(graphics);
+            graphics.circle(lastPoint.x, lastPoint.y, width / 2);
+            graphics.fill({ color });
+          }
 
-          // Broadcast dot (as a tiny line to self)
           broadcastDraw({
             x: lastPoint.x, y: lastPoint.y,
             prevX: lastPoint.x, prevY: lastPoint.y,
@@ -97,8 +114,8 @@ export default function WhiteboardCanvas() {
           });
         };
 
-        const onPointerMove = (e: PointerEvent) => {
-          if (!isDrawing || !lastPoint) return;
+        onPointerMove = (e: PointerEvent) => {
+          if (!isDrawing || !lastPoint || isDestroyed) return;
 
           const rect = app.canvas.getBoundingClientRect();
           const currentPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -106,10 +123,8 @@ export default function WhiteboardCanvas() {
           const color = toolRef.current === 'eraser' ? 0xffffff : 0x000000;
           const width = toolRef.current === 'eraser' ? 20 : 2;
 
-          // Draw Locally
           drawLine(currentPoint.x, currentPoint.y, lastPoint.x, lastPoint.y, color, width);
 
-          // Broadcast
           broadcastDraw({
             x: currentPoint.x, y: currentPoint.y,
             prevX: lastPoint.x, prevY: lastPoint.y,
@@ -119,7 +134,7 @@ export default function WhiteboardCanvas() {
           lastPoint = currentPoint;
         };
 
-        const onPointerUp = () => {
+        onPointerUp = () => {
           isDrawing = false;
           lastPoint = null;
         };
@@ -131,6 +146,7 @@ export default function WhiteboardCanvas() {
         // 3. Setup Remote Data Listener
         if (room) {
           room.on(RoomEvent.DataReceived, (payload: Uint8Array, participant: any) => {
+            if (isDestroyed) return;
             try {
               const str = new TextDecoder().decode(payload);
               const event = JSON.parse(str);
@@ -138,7 +154,9 @@ export default function WhiteboardCanvas() {
               if (event.type === 'draw') {
                 drawLine(event.x, event.y, event.prevX, event.prevY, event.color, event.width);
               } else if (event.type === 'clear') {
-                drawingContainer.removeChildren();
+                if (drawingContainerRef.current) {
+                  drawingContainer.removeChildren();
+                }
               }
             } catch (e) {
               console.error('Failed to parse board data', e);
@@ -151,12 +169,28 @@ export default function WhiteboardCanvas() {
     initPixi();
 
     return () => {
+      isDestroyed = true; // 먼저 플래그 설정
+
+      // 이벤트 리스너 제거
+      if (onPointerMove) window.removeEventListener('pointermove', onPointerMove);
+      if (onPointerUp) window.removeEventListener('pointerup', onPointerUp);
+      if (appRef.current && onPointerDown) {
+        appRef.current.canvas.removeEventListener('pointerdown', onPointerDown);
+      }
+
+      // ResizeObserver 정리
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+
+      // PIXI 앱 정리
       if (appRef.current) {
         appRef.current.destroy(true, { children: true, texture: true });
         appRef.current = null;
       }
+      drawingContainerRef.current = null;
     };
-  }, [room]); // Re-init if room changes (though layout ensures room is stable usually)
+  }, [room]);
 
   // Helper to send data
   const broadcastDraw = (data: Omit<DrawEvent, 'ids'>) => {
