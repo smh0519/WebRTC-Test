@@ -25,6 +25,7 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body
+        suppressHydrationWarning={true}
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-900`}
       >
         {children}

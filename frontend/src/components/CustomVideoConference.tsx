@@ -45,13 +45,16 @@ export default function CustomVideoConference() {
         });
     }, [tracks]);
 
+    // Debug logging
+    console.log('CVC State:', { connectionState, tracksLength: tracks.length, activeTracksLength: activeTracks.length });
+
     // 연결 중일 때
     if (connectionState === 'connecting') {
         return (
-            <div className="h-full flex items-center justify-center bg-gray-900">
+            <div className="h-full flex items-center justify-center bg-gray-800">
                 <div className="text-center">
                     <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                    <p className="text-white text-lg">연결 중...</p>
+                    <p className="text-white text-lg">연결 중... (Connecting)</p>
                 </div>
             </div>
         );
@@ -60,7 +63,7 @@ export default function CustomVideoConference() {
     // 활성 참가자가 없을 때
     if (activeTracks.length === 0) {
         return (
-            <div className="h-full flex flex-col bg-gray-900">
+            <div className="h-full flex flex-col bg-blue-900/20 border-2 border-blue-500">
                 {/* 헤더 */}
                 <div className="flex items-center justify-between px-6 py-4 bg-gray-800/50 backdrop-blur-sm border-b border-gray-700/50">
                     <div className="flex items-center gap-3">
@@ -94,7 +97,8 @@ export default function CustomVideoConference() {
     }
 
     return (
-        <div className="h-full flex flex-col bg-gray-900">
+        <div className="h-full w-full flex flex-col bg-gray-900 border-4 border-red-500 relative z-10" style={{ minHeight: '100%' }}>
+            <div className="absolute top-10 left-0 bg-red-500 text-white p-2 z-50">VIDEO COMPONENT (Red)</div>
             {/* 헤더 */}
             <div className="flex items-center justify-between px-6 py-4 bg-gray-800/50 backdrop-blur-sm border-b border-gray-700/50">
                 <div className="flex items-center gap-3">

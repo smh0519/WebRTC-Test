@@ -9,6 +9,7 @@ import {
 import '@livekit/components-styles';
 import { getToken } from '@/lib/api';
 import CustomVideoConference from '@/components/CustomVideoConference';
+import WhiteboardCanvas from '@/components/WhiteboardCanvas';
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || 'ws://localhost:7880';
 
@@ -18,6 +19,7 @@ function RoomContent() {
     const router = useRouter();
     const [token, setToken] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
+    const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
 
     const roomId = params.roomId as string;
     const participantName = searchParams.get('participant') || 'Anonymous';
@@ -79,40 +81,76 @@ function RoomContent() {
     }
 
     return (
-        <div className="h-screen bg-gray-900">
-            <LiveKitRoom
-                serverUrl={LIVEKIT_URL}
-                token={token}
-                connect={true}
-                video={true}
-                audio={true}
-                onDisconnected={handleLeave}
-                onError={(err) => {
-                    console.error('LiveKit error:', err);
-                    setError(err.message);
-                }}
-                options={{
-                    adaptiveStream: true,
-                    dynacast: true,
-                    // 연결 안정성 향상
-                    disconnectOnPageLeave: true,
-                    // 비디오 기본 설정
-                    videoCaptureDefaults: {
-                        resolution: { width: 1280, height: 720, frameRate: 30 },
-                    },
-                    // 퍼블리시 기본 설정
-                    publishDefaults: {
-                        simulcast: true,
-                        videoCodec: 'vp8',
-                    },
-                }}
-                style={{ height: '100%' }}
-            >
+
+        <LiveKitRoom
+            serverUrl={LIVEKIT_URL}
+            token={token}
+            connect={true}
+            video={true}
+            audio={true}
+            onDisconnected={handleLeave}
+            onError={(err) => {
+                console.error('LiveKit error:', err);
+                setError(err.message);
+            }}
+            options={{
+                adaptiveStream: true,
+                dynacast: true,
+                disconnectOnPageLeave: true,
+                videoCaptureDefaults: {
+                    resolution: { width: 1280, height: 720, frameRate: 30 },
+                },
+                publishDefaults: {
+                    simulcast: true,
+                    videoCodec: 'vp8',
+                },
+            }}
+            className="h-screen w-screen bg-gray-900 overflow-hidden relative"
+            style={{ height: '100vh' }}
+        >
+            {/* Main Content Area */}
+            <div className="absolute inset-0 w-full h-full border-4 border-green-500 z-0 flex flex-col justify-center items-center">
+                <div className="absolute top-0 left-0 bg-green-500 text-black p-2 z-50">PAGE LAYER (Green)</div>
                 <CustomVideoConference />
                 <RoomAudioRenderer />
-            </LiveKitRoom>
-        </div>
+            </div>
+
+            {/* Whiteboard Overlay (Modal Style) */}
+            {isWhiteboardOpen && (
+                <div className="absolute inset-4 z-50 bg-gray-800 rounded-2xl shadow-2xl ring-1 ring-white/10 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                    <div className="absolute top-4 right-4 z-50">
+                        <button
+                            onClick={() => setIsWhiteboardOpen(false)}
+                            className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg shadow-lg transition-colors"
+                        >
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div className="flex-1 relative w-full h-full">
+                        <WhiteboardCanvas />
+                    </div>
+                </div>
+            )}
+
+            {/* Floating Toggle Button */}
+            {!isWhiteboardOpen && (
+                <div className="absolute bottom-8 right-8 z-40">
+                    <button
+                        onClick={() => setIsWhiteboardOpen(true)}
+                        className="bg-white text-gray-900 p-4 rounded-full shadow-xl hover:bg-gray-100 transition-transform hover:scale-105 flex items-center gap-2 group"
+                    >
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                        <span className="font-bold hidden group-hover:block transition-all">화이트보드 열기</span>
+                    </button>
+                </div>
+            )}
+        </LiveKitRoom>
     );
+
 }
 
 export default function RoomPage() {

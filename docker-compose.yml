@@ -7,9 +7,8 @@ services:
       - "7880:7880"
       - "7881:7881"
       - "7882:7882/udp"
-    environment:
-      - LIVEKIT_KEYS=devkey: secret
-    command: --dev --bind 0.0.0.0
+
+    command: --dev --bind 0.0.0.0 --node-ip=127.0.0.1
 
   backend:
     build:
