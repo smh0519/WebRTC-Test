@@ -7,9 +7,9 @@ services:
       - "7880:7880"
       - "7881:7881"
       - "7882:7882/udp"
-    volumes:
-      - ./livekit.yaml:/livekit.yaml
-    command: --dev --config /livekit.yaml --node-ip=127.0.0.1
+    # volumes:
+    #   - ./livekit.yaml:/livekit.yaml
+    command: --dev --bind 0.0.0.0
 
   backend:
     build:
