@@ -11,6 +11,7 @@ import { getToken } from '@/lib/api';
 import CustomVideoConference from '@/components/CustomVideoConference';
 import WhiteboardCanvas from '@/components/WhiteboardCanvas';
 import ParticipantSidebar from '@/components/ParticipantSidebar';
+import ChatPanel from '@/components/ChatPanel';
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || 'ws://localhost:7880';
 
@@ -21,6 +22,8 @@ function RoomContent() {
     const [token, setToken] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
     const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
 
     const roomId = params.roomId as string;
     const participantName = searchParams.get('participant') || 'Anonymous';
@@ -159,9 +162,31 @@ function RoomContent() {
                 </div>
             )}
 
-            {/* Floating Toggle Button */}
+            {/* Floating Toggle Buttons */}
             {!isWhiteboardOpen && (
-                <div className="absolute bottom-8 right-8 z-40">
+                <div className="absolute bottom-8 right-8 z-40 flex gap-3">
+                    {/* Chat Button */}
+                    <button
+                        onClick={() => {
+                            setIsChatOpen(!isChatOpen);
+                            if (!isChatOpen) setUnreadCount(0);
+                        }}
+                        className={`relative p-4 rounded-full shadow-xl transition-transform hover:scale-105 flex items-center gap-2 group ${isChatOpen
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-white text-gray-900 hover:bg-gray-100'
+                            }`}
+                    >
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                        {unreadCount > 0 && !isChatOpen && (
+                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
+                                {unreadCount > 9 ? '9+' : unreadCount}
+                            </span>
+                        )}
+                    </button>
+
+                    {/* Whiteboard Button */}
                     <button
                         onClick={() => setIsWhiteboardOpen(true)}
                         className="bg-white text-gray-900 p-4 rounded-full shadow-xl hover:bg-gray-100 transition-transform hover:scale-105 flex items-center gap-2 group"
@@ -169,8 +194,20 @@ function RoomContent() {
                         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                         </svg>
-                        <span className="font-bold hidden group-hover:block transition-all">화이트보드 열기</span>
                     </button>
+                </div>
+            )}
+
+            {/* Chat Panel (Side Slide) */}
+            {isChatOpen && !isWhiteboardOpen && (
+                <div className="absolute top-4 right-4 bottom-4 w-80 z-50">
+                    <ChatPanel
+                        roomId={roomId}
+                        onClose={() => setIsChatOpen(false)}
+                        onNewMessage={() => {
+                            if (!isChatOpen) setUnreadCount(prev => prev + 1);
+                        }}
+                    />
                 </div>
             )}
         </LiveKitRoom>
