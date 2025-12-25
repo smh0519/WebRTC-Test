@@ -1,4 +1,7 @@
-import { redis } from './redis';
+import { getRedisClient } from './redis';
+
+// Get Redis client
+const redis = getRedisClient();
 
 // Redis Keys helper
 const getKey = (roomId: string) => `whiteboard:room:${roomId}`;
